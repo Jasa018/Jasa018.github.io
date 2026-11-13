@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JASA-OS — Mis juegos</title>
+  <meta name="description" content="Escritorio retro con los juegos de Jasa018." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 8 8%22 shape-rendering=%22crispEdges%22%3E%3Crect width=%228%22 height=%228%22 fill=%22%23241a3a%22/%3E%3Crect x=%221%22 y=%221%22 width=%226%22 height=%224%22 fill=%22%2357d9a3%22/%3E%3Crect x=%222%22 y=%226%22 width=%224%22 height=%221%22 fill=%22%23f2c94c%22/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0d0a16;
+      --win: #2a2140;
+      --win2: #362a52;
+      --edge-hi: #8f7fc4;
+      --edge-lo: #120d1f;
+      --title: #57d9a3;
+      --title2: #2f9e7a;
+      --text: #efe7ff;
+      --muted: #a99cc9;
+      --gold: #f2c94c;
+      --red: #ff5d73;
+      --task: #1a1428;
+      --px: 'Press Start 2P', monospace;
+      --vt: 'VT323', monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); color: var(--text); font-family: var(--vt); font-size: 20px; }
+    body { -webkit-font-smoothing: none; user-select: none; }
+    button { font-family: var(--px); font-size: 10px; color: var(--text); cursor: pointer; }
+
+    /* Fondo de pantalla pixelado (se dibuja en un canvas pequeño y se escala) */
+    #wallpaper { position: fixed; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; z-index: 0; }
+
+    /* Iconos del escritorio */
+    #desktop {
+      position: fixed; inset: 0 0 44px 0; z-index: 1;
+      display: grid; grid-template-rows: repeat(auto-fill, 104px); grid-auto-flow: column; grid-auto-columns: 104px;
+      gap: 6px; padding: 14px; align-content: start;
+    }
+    .icon {
+      display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 4px;
+      border: 2px dashed transparent; cursor: pointer; text-align: center; outline: none;
+    }
+    .icon img { width: 56px; height: 56px; image-rendering: pixelated; filter: drop-shadow(3px 3px 0 #0008); }
+    .icon span { font-family: var(--px); font-size: 8px; line-height: 1.5; color: #fff; text-shadow: 2px 2px 0 #000; padding: 2px 3px; }
+    .icon:hover span { background: #0006; }
+    .icon.sel span, .icon:focus-visible span { background: var(--title2); }
+    .icon.sel, .icon:focus-visible { border-color: #ffffff66; }
+
+    /* Ventanas */
+    .win {
+      position: fixed; z-index: 10; min-width: 260px; max-width: calc(100vw - 16px); max-height: calc(100vh - 60px);
+      background: var(--win); display: flex; flex-direction: column;
+      border: 3px solid; border-color: var(--edge-hi) var(--edge-lo) var(--edge-lo) var(--edge-hi);
+      box-shadow: 6px 6px 0 #0009;
+      animation: pop .14s steps(3);
+    }
+    @keyframes pop { from { transform: scale(.85); opacity: 0; } }
+    .win.max { left: 0 !important; top: 0 !important; width: 100vw !important; height: calc(100vh - 44px) !important; max-height: none; max-width: none; }
+    .win.hidden { display: none; }
+    .bar {
+      display: flex; align-items: center; gap: 8px; padding: 5px 5px 5px 8px; cursor: move; touch-action: none;
+      background: repeating-linear-gradient(90deg, var(--title) 0 4px, var(--title2) 4px 8px);
+    }
+    .win:not(.active) .bar { background: repeating-linear-gradient(90deg, #6b6080 0 4px, #554a6a 4px 8px); }
+    .bar img { width: 16px; height: 16px; image-rendering: pixelated; }
+    .bar .t { flex: 1; font-family: var(--px); font-size: 9px; color: #0d0a16; text-shadow: 1px 1px 0 #ffffff55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar button {
+      width: 22px; height: 20px; padding: 0; font-size: 9px; color: var(--ink); background: #d9d0f0;
+      border: 2px solid; border-color: #fff #5a4f78 #5a4f78 #fff;
+    }
+    .bar button:active { border-color: #5a4f78 #fff #fff #5a4f78; }
+    .body { padding: 14px; overflow: auto; flex: 1; }
+    .body.flush { padding: 0; overflow: hidden; background: #000; }
+    .body iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+    /* Ficha de juego */
+    .card { display: grid; grid-template-columns: 96px 1fr; gap: 14px; max-width: 520px; }
+    .card img { width: 96px; height: 96px; image-rendering: pixelated; background: #0003; border: 2px solid var(--edge-lo); }
+    .card h2 { font-family: var(--px); font-size: 13px; line-height: 1.5; margin: 0 0 6px; color: var(--gold); }
+    .card p { margin: 0 0 8px; line-height: 1.1; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .tags span { font-size: 16px; background: var(--win2); border: 1px solid var(--edge-hi); padding: 0 6px; color: var(--muted); }
+    .btns { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
+    .btn {
+      padding: 9px 12px; background: var(--win2); border: 3px solid; border-color: var(--edge-hi) var(--edge-lo) var(--edge-lo) var(--edge-hi);
+      text-decoration: none; color: var(--text); font-family: var(--px); font-size: 9px; display: inline-block;
+    }
+    .btn.go { background: var(--title2); color: #fff; }
+    .btn:hover { filter: brightness(1.15); }
+    .btn:active { border-color: var(--edge-lo) var(--edge-hi) var(--edge-hi) var(--edge-lo); }
+    .controls { grid-column: 1 / -1; font-size: 17px; color: var(--muted); border-top: 2px dashed var(--win2); padding-top: 8px; line-height: 1.15; }
+    .note { font-size: 18px; line-height: 1.15; color: var(--muted); }
+    .note b { color: var(--text); font-weight: normal; }
+    .txt { font-family: var(--vt); font-size: 20px; line-height: 1.15; white-space: pre-wrap; background: #0d0a16; color: #c8ffd8; padding: 12px; margin: 0; border: 2px solid var(--edge-lo); }
+
+    /* Barra de tareas */
+    #taskbar {
+      position: fixed; left: 0; right: 0; bottom: 0; height: 44px; z-index: 100;
+      display: flex; align-items: center; gap: 6px; padding: 0 6px;
+      background: var(--task); border-top: 3px solid var(--edge-hi);
+    }
+    #start {
+      display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px;
+      background: var(--title2); border: 3px solid; border-color: #9ff0cf #134a3a #134a3a #9ff0cf;
+    }
+    #start.on { border-color: #134a3a #9ff0cf #9ff0cf #134a3a; }
+    #start img { width: 16px; height: 16px; image-rendering: pixelated; }
+    #tasks { flex: 1; display: flex; gap: 6px; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+    .task {
+      height: 32px; max-width: 180px; padding: 0 10px; display: flex; align-items: center; gap: 6px; white-space: nowrap;
+      background: var(--win); border: 3px solid; border-color: var(--edge-hi) var(--edge-lo) var(--edge-lo) var(--edge-hi);
+      font-size: 8px; overflow: hidden;
+    }
+    .task.active { background: var(--win2); border-color: var(--edge-lo) var(--edge-hi) var(--edge-hi) var(--edge-lo); }
+    .task img { width: 16px; height: 16px; image-rendering: pixelated; flex: none; }
+    .task span { overflow: hidden; text-overflow: ellipsis; }
+    #clock { font-family: var(--px); font-size: 9px; color: var(--title); padding: 0 8px; border-left: 2px solid var(--win2); height: 32px; display: flex; align-items: center; }
+
+    #menu {
+      position: fixed; left: 6px; bottom: 47px; z-index: 101; width: 280px; display: none;
+      background: var(--win); border: 3px solid; border-color: var(--edge-hi) var(--edge-lo) var(--edge-lo) var(--edge-hi);
+      box-shadow: 6px 6px 0 #0009;
+    }
+    #menu.on { display: flex; }
+    #menu .side { writing-mode: vertical-rl; transform: rotate(180deg); background: linear-gradient(var(--title2), #1d5a48); font-family: var(--px); font-size: 10px; padding: 10px 6px; color: #fff; letter-spacing: 2px; }
+    #menu ul { list-style: none; margin: 0; padding: 4px 0; flex: 1; }
+    #menu li { display: flex; align-items: center; gap: 10px; padding: 6px 12px; cursor: pointer; font-size: 20px; }
+    #menu li:hover { background: var(--title2); }
+    #menu li img { width: 24px; height: 24px; image-rendering: pixelated; }
+    #menu hr { border: 0; border-top: 2px dashed var(--win2); margin: 4px 8px; }
+
+    /* Arranque */
+    #boot {
+      position: fixed; inset: 0; z-index: 1000; background: #000; color: #57d9a3; font-family: var(--vt); font-size: 22px;
+      padding: 24px; white-space: pre-wrap; line-height: 1.2; cursor: pointer;
+    }
+    #boot .cur { animation: blink .6s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    @media (max-width: 640px) {
+      #desktop { grid-template-rows: none; grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); grid-auto-columns: auto; padding: 10px; }
+      .win { left: 4px !important; right: 4px; top: 6px !important; width: auto !important; }
+      .card { grid-template-columns: 64px 1fr; }
+      .card img { width: 64px; height: 64px; }
+      #clock { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { .win { animation: none; } #boot .cur { animation: none; } }
+  </style>
+</head>
+<body>
+  <canvas id="wallpaper" width="320" height="180"></canvas>
+  <div id="desktop" role="list"></div>
+  <div id="menu" role="menu"><div class="side">JASA-OS</div><ul id="menu-list"></ul></div>
+  <div id="taskbar">
+    <button id="start" aria-haspopup="menu"><img id="start-ico" alt="" />Inicio</button>
+    <div id="tasks"></div>
+    <div id="clock"></div>
+  </div>
+  <div id="boot"></div>
+
+  <script>
+    // =====================================================================
+    //  Juegos del escritorio. Para añadir uno nuevo, copia una entrada.
+    // =====================================================================
+    const GAMES = [
+      {
+        id: 'tierras',
+        title: 'Tierras Partidas',
+        url: 'https://jasa018.github.io/tierras-partidas/',
+        repo: 'https://github.com/Jasa018/tierras-partidas',
+        icon: 'sword',
+        desc: 'Roguelike por turnos de fantasía oscura. Lidera al gremio por mazmorras aleatorias, gestiona el hambre y cambia de clase antes de cada incursión.',
+        tags: ['Roguelike', 'Por turnos', 'Mazmorras'],
+        controls: 'Flechas para moverte · Z/Enter para aceptar · X/Esc para volver.',
+      },
+      {
+        id: 'brumaria',
+        title: 'Crónicas de Brumaria',
+        url: 'https://jasa018.github.io/brumaria/',
+        repo: 'https://github.com/Jasa018/brumaria',
+        icon: 'tree',
+        desc: 'RPG en tiempo real sobre casillas. Explora un mundo abierto con pueblos, NPC que responden a palabras clave, cuevas por plantas, 4 vocaciones, hechizos y dos jefes legendarios.',
+        tags: ['RPG', 'Tiempo real', 'Mundo abierto'],
+        controls: 'Flechas o WASD para moverte · clic para atacar · Enter para hablar · 1-8 hechizos · H ayuda.',
+      },
+    ];
+
+    // =====================================================================
+    //  Iconos en pixel art: cada carácter es un píxel de la paleta.
+    // =====================================================================
+    const PAL = {
+      '.': null, k: '#0d0a16', w: '#ffffff', g: '#c9c2d9', d: '#6b6080', s: '#a8b4c4', S: '#e8eef4',
+      y: '#f2c94c', Y: '#b8860b', b: '#7a5530', B: '#4a3018', G: '#3f8a35', L: '#6cc055', D: '#1f5a1d',
+      r: '#e04848', R: '#8a1c2c', u: '#3e6ad0', U: '#9fd0ff', p: '#7a5cff', t: '#57d9a3', T: '#2f9e7a', m: '#5c4a8a', M: '#2a2140',
+    };
+    const ICONS = {
+      sword: [
+        '..............SS',
+        '.............SsS',
+        '............SsS.',
+        '...........SsS..',
+        '..........SsS...',
+        '.........SsS....',
+        '........SsS.....',
+        '...yY..SsS......',
+        '....yYSsS.......',
+        '.....ysS........',
+        '....yYyY........',
+        '...bY..yY.......',
+        '..bB....Y.......',
+        '.bB.............',
+        'RR..............',
+        'R...............',
+      ],
+      tree: [
+        '.....DDDDD......',
+        '...DDGGGGGDD....',
+        '..DGGLGGGGGGD...',
+        '.DGLLGGGGLGGGD..',
+        '.DGLGGGGGGGLGD..',
+        'DGGGGGLGGGGGGGD.',
+        'DGGGGGGGGGLGGGD.',
+        '.DGGLGGGGGGGGD..',
+        '..DDGGGGGGGDD...',
+        '....DDbbDDD.....',
+        '......bB........',
+        '......bB........',
+        '.....bbBB.......',
+        '..GGGGGGGGGGG...',
+        '.GLGGGGLGGGGLG..',
+        '................',
+      ],
+      pc: [
+        '................',
+        '.kkkkkkkkkkkkkk.',
+        '.kggggggggggggk.',
+        '.kgkkkkkkkkkkgk.',
+        '.kgkttttttttkgk.',
+        '.kgktTttttTtkgk.',
+        '.kgkttttttttkgk.',
+        '.kgktttTTtttkgk.',
+        '.kgkkkkkkkkkkgk.',
+        '.kggggggggggggk.',
+        '.kkkkkkkkkkkkkk.',
+        '......kggk......',
+        '....kkkkkkkk....',
+        '..kggggggggggk..',
+        '..kdddddddddddk.',
+        '..kkkkkkkkkkkkk.',
+      ],
+      folder: [
+        '................',
+        '................',
+        '.kkkkk..........',
+        '.kyyyyk.........',
+        '.kyyyyykkkkkkkk.',
+        '.kYYYYYYYYYYYYk.',
+        '.kyyyyyyyyyyyyk.',
+        '.kyyyyyyyyyyyyk.',
+        '.kyyyyyyyyyyyyk.',
+        '.kyyyyyyyyyyyyk.',
+        '.kyyyyyyyyyyyyk.',
+        '.kyyyyyyyyyyyyk.',
+        '.kYYYYYYYYYYYYk.',
+        '.kkkkkkkkkkkkkk.',
+        '................',
+        '................',
+      ],
+      note: [
+        '..kkkkkkkkkk....',
+        '..kwwwwwwwwkk...',
+        '..kwwwwwwwwkwk..',
+        '..kwddddwwwkkkk.',
+        '..kwwwwwwwwwwwk.',
+        '..kwddddddddwwk.',
+        '..kwwwwwwwwwwwk.',
+        '..kwdddddddwwwk.',
+        '..kwwwwwwwwwwwk.',
+        '..kwddddddddwwk.',
+        '..kwwwwwwwwwwwk.',
+        '..kwdddddwwwwwk.',
+        '..kwwwwwwwwwwwk.',
+        '..kkkkkkkkkkkkk.',
+        '................',
+        '................',
+      ],
+      trash: [
+        '......kkkk......',
+        '..kkkkkggkkkkk..',
+        '..kgggggggggggk.',
+        '..kkkkkkkkkkkkk.',
+        '...kgdgdgdgdgk..',
+        '...kgdgdgdgdgk..',
+        '...kgdgdgdgdgk..',
+        '...kgdgdgdgdgk..',
+        '...kgdgdgdgdgk..',
+        '...kgdgdgdgdgk..',
+        '...kgdgdgdgdgk..',
+        '...kgdgdgdgdgk..',
+        '...kgggggggggk..',
+        '....kkkkkkkkk...',
+        '................',
+        '................',
+      ],
+      github: [
+        '.....kkkkkk.....',
+        '...kkkkkkkkkk...',
+        '..kkwkkkkkkwkk..',
+        '.kkkwwkkkkwwkkk.',
+        '.kkkwwwwwwwwkkk.',
+        'kkkwwwwwwwwwwkkk',
+        'kkkwwkwwwwkwwkkk',
+        'kkkwwwwwwwwwwkkk',
+        'kkkwwwwwwwwwwkkk',
+        'kkkkwwwwwwwwkkkk',
+        '.kkkkkwwwwkkkkk.',
+        '.kwkkkwwwwkkkkk.',
+        '..kwwwwwwwkkkk..',
+        '...kkkwwwwkkk...',
+        '.....kwwwwk.....',
+        '................',
+      ],
+    };
+    const iconCache = {};
+    function iconURL(name) {
+      if (iconCache[name]) return iconCache[name];
+      const rows = ICONS[name];
+      const c = document.createElement('canvas');
+      c.width = 16; c.height = 16;
+      const x = c.getContext('2d');
+      rows.forEach((row, j) => [...row].forEach((ch, i) => { if (PAL[ch]) { x.fillStyle = PAL[ch]; x.fillRect(i, j, 1, 1); } }));
+      return (iconCache[name] = c.toDataURL());
+    }
+
+    // =====================================================================
+    //  Fondo: cielo nocturno, estrellas, luna y montañas en pixel art
+    // =====================================================================
+    function drawWallpaper() {
+      const c = document.getElementById('wallpaper');
+      const W = 320, H = 180;
+      // Ajusta la proporción del lienzo a la pantalla para que los píxeles sean cuadrados
+      const ratio = innerWidth / innerHeight;
+      c.width = Math.round(H * ratio);
+      const w = c.width;
+      const x = c.getContext('2d');
+      const sky = ['#120c24', '#1a1233', '#241a44', '#2f2154', '#3b2862', '#4a3070'];
+      sky.forEach((col, i) => { x.fillStyle = col; x.fillRect(0, Math.floor((i * H) / sky.length), w, Math.ceil(H / sky.length)); });
+      let s = 7;
+      const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < w * 0.45; i++) {
+        x.fillStyle = rnd() < 0.15 ? '#f2c94c' : rnd() < 0.5 ? '#ffffff' : '#a99cc9';
+        x.fillRect(Math.floor(rnd() * w), Math.floor(rnd() * H * 0.6), 1, 1);
+      }
+      // luna
+      const mx = Math.floor(w * 0.8), my = 30;
+      for (let j = -9; j <= 9; j++) for (let i = -9; i <= 9; i++) {
+        if (i * i + j * j > 81) continue;
+        x.fillStyle = (i - 3) * (i - 3) + (j + 2) * (j + 2) < 30 ? '#fff6d8' : '#e8d9a8';
+        x.fillRect(mx + i, my + j, 1, 1);
+      }
+      x.fillStyle = '#d4c590'; x.fillRect(mx - 3, my + 2, 2, 2); x.fillRect(mx + 2, my - 4, 1, 1);
+      // montañas en capas
+      const layer = (base, amp, freq, col, seed) => {
+        x.fillStyle = col;
+        for (let i = 0; i < w; i++) {
+          const h = base + Math.round(Math.sin(i * freq + seed) * amp + Math.sin(i * freq * 2.7 + seed * 2) * amp * 0.4);
+          x.fillRect(i, h, 1, H - h);
+        }
+      };
+      layer(112, 14, 0.035, '#2a1d48', 1);
+      layer(128, 10, 0.05, '#1e1536', 3);
+      layer(146, 6, 0.08, '#150f27', 5);
+      // pinos en primer plano
+      x.fillStyle = '#0d0a16';
+      for (let i = 4; i < w; i += 9 + Math.floor(rnd() * 14)) {
+        const h = 10 + Math.floor(rnd() * 10), b = 160 + Math.floor(rnd() * 6);
+        for (let r = 0; r < h; r++) { const ww = Math.floor(r / 2) + 1; x.fillRect(i - ww, b - h + r, ww * 2 + 1, 1); }
+      }
+      x.fillRect(0, 166, w, H - 166);
+    }
+
+    // =====================================================================
+    //  Ventanas
+    // =====================================================================
+    let zTop = 10;
+    const wins = new Map();
+
+    function focusWin(id) {
+      const w = wins.get(id);
+      if (!w) return;
+      w.el.classList.remove('hidden');
+      w.el.style.zIndex = ++zTop;
+      for (const [k, o] of wins) {
+        o.el.classList.toggle('active', k === id);
+        o.task.classList.toggle('active', k === id);
+      }
+    }
+
+    function openWin(id, { title, icon, width, height, content, flush }) {
+      if (wins.has(id)) { focusWin(id); return wins.get(id); }
+      const el = document.createElement('div');
+      el.className = 'win';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-label', title);
+      const n = wins.size;
+      const vw = innerWidth, vh = innerHeight - 44;
+      const ww = Math.min(width || 520, vw - 16);
+      el.style.width = ww + 'px';
+      if (height) el.style.height = Math.min(height, vh - 16) + 'px';
+      el.style.left = Math.max(8, Math.min(vw - ww - 8, 140 + n * 28 + (vw - ww - 300) / 4)) + 'px';
+      el.style.top = Math.max(8, 40 + n * 28) + 'px';
+      el.innerHTML = `
+        <div class="bar"><img alt="" src="${iconURL(icon)}"><span class="t"></span>
+          <button data-a="min" aria-label="Minimizar">_</button><button data-a="max" aria-label="Maximizar">□</button><button data-a="close" aria-label="Cerrar">x</button></div>
+        <div class="body${flush ? ' flush' : ''}"></div>`;
+      el.querySelector('.t').textContent = title;
+      const body = el.querySelector('.body');
+      if (typeof content === 'string') body.innerHTML = content; else body.append(content);
+      document.body.append(el);
+
+      const task = document.createElement('button');
+      task.className = 'task';
+      task.innerHTML = `<img alt="" src="${iconURL(icon)}"><span></span>`;
+      task.querySelector('span').textContent = title;
+      task.onclick = () => {
+        const hidden = el.classList.contains('hidden');
+        if (!hidden && el.classList.contains('active')) { el.classList.add('hidden'); el.classList.remove('active'); task.classList.remove('active'); }
+        else focusWin(id);
+      };
+      document.getElementById('tasks').append(task);
+
+      const w = { el, task, body };
+      wins.set(id, w);
+      el.addEventListener('pointerdown', () => focusWin(id));
+      el.querySelector('[data-a=close]').onclick = (e) => { e.stopPropagation(); closeWin(id); };
+      el.querySelector('[data-a=min]').onclick = (e) => { e.stopPropagation(); el.classList.add('hidden'); el.classList.remove('active'); task.classList.remove('active'); };
+      el.querySelector('[data-a=max]').onclick = (e) => { e.stopPropagation(); el.classList.toggle('max'); };
+      el.querySelector('.bar').addEventListener('dblclick', () => el.classList.toggle('max'));
+      dragBy(el.querySelector('.bar'), el);
+      focusWin(id);
+      return w;
+    }
+
+    function closeWin(id) {
+      const w = wins.get(id);
+      if (!w) return;
+      w.el.remove();
+      w.task.remove();
+      wins.delete(id);
+    }
+
+    function dragBy(handle, el) {
+      handle.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('button') || el.classList.contains('max')) return;
+        handle.setPointerCapture(e.pointerId);
+        const r = el.getBoundingClientRect();
+        const dx = e.clientX - r.left, dy = e.clientY - r.top;
+        // Mientras se arrastra, el iframe no debe robar el ratón
+        el.querySelectorAll('iframe').forEach((f) => (f.style.pointerEvents = 'none'));
+        const move = (ev) => {
+          el.style.left = Math.max(-r.width + 80, Math.min(innerWidth - 80, ev.clientX - dx)) + 'px';
+          el.style.top = Math.max(0, Math.min(innerHeight - 80, ev.clientY - dy)) + 'px';
+        };
+        const up = () => {
+          handle.removeEventListener('pointermove', move);
+          handle.removeEventListener('pointerup', up);
+          el.querySelectorAll('iframe').forEach((f) => (f.style.pointerEvents = ''));
+        };
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', up);
+      });
+    }
+
+    // =====================================================================
+    //  Contenido de las ventanas
+    // =====================================================================
+    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+    function openGameCard(g) {
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.innerHTML = `
+        <img alt="" src="${iconURL(g.icon)}">
+        <div>
+          <h2>${esc(g.title)}</h2>
+          <div class="tags">${g.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</div>
+          <p>${esc(g.desc)}</p>
+        </div>
+        <div class="btns">
+          <button class="btn go" data-a="play">▶ Jugar aquí</button>
+          <a class="btn" href="${g.url}" target="_blank" rel="noopener">Abrir en pestaña</a>
+          <a class="btn" href="${g.repo}" target="_blank" rel="noopener">Código</a>
+        </div>
+        <div class="controls">${esc(g.controls)}</div>`;
+      div.querySelector('[data-a=play]').onclick = () => playGame(g);
+      openWin('card-' + g.id, { title: g.title, icon: g.icon, width: 540, content: div });
+    }
+
+    function playGame(g) {
+      closeWin('card-' + g.id);
+      const frame = document.createElement('iframe');
+      frame.src = g.url;
+      frame.title = g.title;
+      frame.allow = 'autoplay; fullscreen; gamepad';
+      const w = openWin('play-' + g.id, { title: g.title, icon: g.icon, width: 1180, height: 760, content: frame, flush: true });
+      if (innerWidth < 900) w.el.classList.add('max');
+      setTimeout(() => frame.focus(), 300);
+    }
+
+    function openAbout() {
+      openWin('about', {
+        title: 'Mi PC', icon: 'pc', width: 440,
+        content: `<div class="note">
+          <p><b>JASA-OS</b> versión 1.0</p>
+          <p>Un escritorio de 8 bits para guardar mis juegos. Cada icono es un juego distinto, hecho en su propio proyecto y publicado en GitHub Pages.</p>
+          <p>Juegos instalados: <b>${GAMES.length}</b></p>
+          <p>Doble clic en un icono para abrirlo. Las ventanas se pueden mover, minimizar y maximizar.</p>
+        </div>`,
+      });
+    }
+
+    function openReadme() {
+      openWin('readme', {
+        title: 'LEEME.TXT', icon: 'note', width: 480,
+        content: `<pre class="txt">BIENVENIDO A JASA-OS
+====================
+
+Aqui viven mis juegos:
+
+ * TIERRAS PARTIDAS
+   Roguelike por turnos. Mazmorras
+   aleatorias, un gremio y hambre.
+
+ * CRONICAS DE BRUMARIA
+   RPG de casillas en tiempo real.
+   Pueblos, NPC, cuevas y hechizos.
+
+Se vienen mas.
+
+Consejo: los juegos guardan la
+partida en tu navegador.</pre>`,
+      });
+    }
+
+    function openSoon() {
+      openWin('soon', {
+        title: 'Próximamente', icon: 'folder', width: 360,
+        content: `<div class="note"><p>Esta carpeta está vacía... por ahora.</p><p>Aquí aparecerán los próximos juegos.</p></div>`,
+      });
+    }
+
+    function openTrash() {
+      openWin('trash', {
+        title: 'Papelera', icon: 'trash', width: 320,
+        content: `<div class="note"><p>La papelera está vacía.</p><p>Los bugs se arreglan, no se tiran.</p></div>`,
+      });
+    }
+
+    // =====================================================================
+    //  Escritorio, menú Inicio y reloj
+    // =====================================================================
+    const ITEMS = [
+      ...GAMES.map((g) => ({ label: g.title, icon: g.icon, open: () => openGameCard(g) })),
+      { label: 'Mi PC', icon: 'pc', open: openAbout },
+      { label: 'LEEME.TXT', icon: 'note', open: openReadme },
+      { label: 'Próximamente', icon: 'folder', open: openSoon },
+      { label: 'GitHub', icon: 'github', open: () => window.open('https://github.com/Jasa018', '_blank', 'noopener') },
+      { label: 'Papelera', icon: 'trash', open: openTrash },
+    ];
+
+    function buildDesktop() {
+      const desk = document.getElementById('desktop');
+      const touch = matchMedia('(pointer: coarse)').matches;
+      for (const it of ITEMS) {
+        const d = document.createElement('div');
+        d.className = 'icon';
+        d.tabIndex = 0;
+        d.setAttribute('role', 'listitem');
+        d.innerHTML = `<img alt="" src="${iconURL(it.icon)}"><span></span>`;
+        d.querySelector('span').textContent = it.label;
+        d.addEventListener('click', () => {
+          document.querySelectorAll('.icon.sel').forEach((e) => e.classList.remove('sel'));
+          d.classList.add('sel');
+          if (touch) it.open();
+        });
+        d.addEventListener('dblclick', it.open);
+        d.addEventListener('keydown', (e) => { if (e.key === 'Enter') it.open(); });
+        desk.append(d);
+      }
+      desk.addEventListener('click', (e) => { if (e.target === desk) document.querySelectorAll('.icon.sel').forEach((x) => x.classList.remove('sel')); });
+
+      const list = document.getElementById('menu-list');
+      GAMES.forEach((g) => list.append(menuItem(g.title, g.icon, () => playGame(g))));
+      list.append(document.createElement('hr'));
+      ITEMS.slice(GAMES.length).forEach((it) => list.append(menuItem(it.label, it.icon, it.open)));
+    }
+
+    function menuItem(label, icon, fn) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'menuitem');
+      li.innerHTML = `<img alt="" src="${iconURL(icon)}"><span></span>`;
+      li.querySelector('span').textContent = label;
+      li.onclick = () => { toggleMenu(false); fn(); };
+      return li;
+    }
+
+    function toggleMenu(force) {
+      const m = document.getElementById('menu');
+      const on = force ?? !m.classList.contains('on');
+      m.classList.toggle('on', on);
+      document.getElementById('start').classList.toggle('on', on);
+    }
+
+    function tick() {
+      const d = new Date();
+      document.getElementById('clock').textContent = d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // =====================================================================
+    //  Arranque
+    // =====================================================================
+    function boot() {
+      const el = document.getElementById('boot');
+      let skip = false;
+      try { skip = sessionStorage.getItem('jasa-booted') === '1'; } catch (e) {}
+      if (skip || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.remove(); return; }
+      const lines = ['JASA-OS BIOS v1.0', 'Memoria: 640K ... OK', 'Buscando juegos ... ' + GAMES.length + ' encontrados', 'Cargando escritorio', ''];
+      let i = 0;
+      const step = () => {
+        if (!el.isConnected) return;
+        el.innerHTML = lines.slice(0, i).map(esc).join('\n') + '<span class="cur">█</span>';
+        if (i++ < lines.length) setTimeout(step, 260);
+        else setTimeout(done, 350);
+      };
+      const done = () => { el.remove(); try { sessionStorage.setItem('jasa-booted', '1'); } catch (e) {} };
+      el.onclick = done;
+      step();
+    }
+
+    document.getElementById('start-ico').src = iconURL('pc');
+    document.getElementById('start').onclick = (e) => { e.stopPropagation(); toggleMenu(); };
+    document.addEventListener('click', (e) => { if (!e.target.closest('#menu')) toggleMenu(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleMenu(false); });
+    addEventListener('resize', drawWallpaper);
+    drawWallpaper();
+    buildDesktop();
+    tick();
+    setInterval(tick, 10000);
+    boot();
+  </script>
+</body>
+</html>
